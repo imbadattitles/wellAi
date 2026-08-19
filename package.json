@@ -1,0 +1,28 @@
+{
+  "name": "wellllai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI learning and interview training platform",
+  "packageManager": "npm@11.6.2",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build:packages": "npm run build -w @wellllai/contracts && npm run build -w @wellllai/platform",
+    "build": "npm run build:packages && npm run build -w @wellllai/api-gateway && npm run build -w @wellllai/knowledge-service && npm run build -w @wellllai/learning-service && npm run build -w @wellllai/interview-service && npm run build -w @wellllai/web",
+    "typecheck": "npm run build:packages && npm run typecheck --workspaces --if-present",
+    "test": "npm run build:packages && npm run test --workspaces --if-present",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "prettier": "^3.6.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  }
+}

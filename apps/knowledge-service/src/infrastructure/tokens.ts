@@ -1,0 +1,4 @@
+export const KNOWLEDGE_CONFIG = Symbol('KNOWLEDGE_CONFIG');
+export const POSTGRES_POOL = Symbol('POSTGRES_POOL');
+export const OPENAI_HTTP_CLIENT = Symbol('OPENAI_HTTP_CLIENT');
+export const KAFKA_EVENT_PUBLISHER = Symbol('KAFKA_EVENT_PUBLISHER');
