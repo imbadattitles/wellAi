@@ -7,15 +7,58 @@ MVP-платформа для двух сценариев:
 
 Frontend построен на Next.js, публичный API — на NestJS. Предметные области разнесены по NestJS-микросервисам, долгие процессы и доменные события проходят через Kafka. PostgreSQL является постоянным хранилищем, `pgvector` используется для RAG, Redis — для rate limit и краткоживущего состояния.
 
+## Dev-запуск через Docker
+
+Нужны Docker Desktop и Docker Compose 2.22 или новее. Локальная установка Node.js, PostgreSQL, Kafka и Redis для этого режима не требуется.
+
+```powershell
+Copy-Item .env.example .env
+# Укажите настоящий OPENAI_API_KEY в .env, если нужны рабочие AI-сценарии.
+docker compose up --build --watch
+```
+
+Если Node.js уже установлен, короткий эквивалент команды запуска — `npm run docker:dev`.
+
+Команда собирает dev-образ и поднимает PostgreSQL с `pgvector`, Kafka в KRaft-режиме, Redis, миграции, четыре backend-приложения и Next.js. Значение `OPENAI_API_KEY=replace-me` не мешает контейнерам запуститься, но запросы к модели завершатся ошибкой авторизации.
+
+После запуска доступны:
+
+- frontend — `http://localhost:3000`;
+- API Gateway — `http://localhost:3001`, health check — `http://localhost:3001/api/health`;
+- PostgreSQL, Kafka и Redis с хоста — порты `15432`, `29092` и `16379` (переопределяются через `.env`);
+- внутренние backend-порты `3011`, `3012`, `3013` и gRPC `4011` доступны только в Compose-сети, чтобы не конфликтовать с локальными процессами.
+
+`docker:dev` включает Compose Watch. Изменения в `apps/*/src`, web `app/components/lib`, `packages/contracts`, `packages/platform` и gRPC `.proto` синхронизируются автоматически. NestJS-сервисы проходят инкрементальную TypeScript-сборку и перезапускаются только после успешной компиляции; Next.js использует Fast Refresh. Изменение `package.json` или `package-lock.json` вызывает пересборку соответствующего dev-образа.
+
+Новые SQL-миграции добавляйте новым файлом в `apps/<service>/migrations`; применить их к уже запущенному стеку можно так:
+
+```powershell
+docker compose build db-migrate
+docker compose run --rm db-migrate
+```
+
+Остановить стек без удаления данных:
+
+```powershell
+npm run docker:down
+```
+
+Полный сброс удаляет PostgreSQL и Kafka volumes вместе со всеми локальными данными:
+
+```powershell
+npm run docker:reset
+```
+
 ## Архитектура
 
 ```mermaid
 flowchart LR
-  Web[Next.js web] --> Gateway[Nest API Gateway]
+  Web[Next.js web] -->|REST| Gateway[Nest API Gateway]
+  Gateway -.->|SSE statuses| Web
   Gateway -->|HTTP| Knowledge[Knowledge service]
   Gateway -->|HTTP| Learning[Learning service]
   Gateway -->|HTTP| Interview[Interview service]
-  Learning -->|HTTP retrieval| Knowledge
+  Learning -->|gRPC retrieval| Knowledge
 
   Knowledge <--> Kafka[(Kafka)]
   Learning <--> Kafka
@@ -24,14 +67,14 @@ flowchart LR
   Knowledge --> PG[(PostgreSQL + pgvector)]
   Learning --> PG
   Interview --> PG
-  Gateway --> Redis[(Redis)]
+  Gateway --> Redis[(Redis rate limit + SSE fan-out)]
 
   Knowledge --> OpenAI[OpenAI API]
   Learning --> OpenAI
   Interview --> OpenAI
 ```
 
-Kafka не используется для передачи PDF и не заменяет синхронный HTTP. Через Kafka идут долгие команды, статусы и доменные факты; пользовательские запросы, которым нужен быстрый ответ, проходят по HTTP.
+Kafka не используется для передачи PDF и не заменяет синхронные вызовы. Через Kafka идут долгие команды, статусы и доменные факты; публичные пользовательские запросы проходят по HTTP, а синхронный retrieval между learning и knowledge — по gRPC. Изменения фоновых статусов доставляются браузеру через SSE.
 
 ## Структура
 
@@ -79,21 +122,24 @@ POST /learning-programs/:programId/questions
 POST /learning-programs/:programId/quizzes
 POST /questions/:questionId/attempts
 
+GET  /learning-programs/:programId/events  (SSE)
+
 POST /interview-programs
 GET  /interview-programs/:sessionId
 POST /interview-programs/:sessionId/answers
+GET  /interview-programs/:sessionId/events (SSE)
 ```
 
 До добавления JWT gateway принимает `x-user-id`. Если заголовка нет, используется один фиксированный demo-user. Это осознанное ограничение MVP, а не production-аутентификация.
 
 ## Что намеренно отложено
 
-- Docker Compose и запуск всей инфраструктуры;
+- production Docker-образы и orchestration;
 - CI/CD;
 - production-аутентификация;
 - object storage для больших PDF;
 - OCR сканов;
-- WebSocket/SSE;
+- WebSocket для двусторонних realtime-сценариев;
 - карточки и автоматическая сборка следующего урока после накопления статистики;
 - ветвление интервью по предыдущим ответам (в MVP сценарий фиксируется на старте);
 - биллинг и лимиты OpenAI по тарифам.

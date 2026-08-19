@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { ClientsModule, Transport } from '@nestjs/microservices';
+import { KNOWLEDGE_GRPC_PACKAGE, KNOWLEDGE_GRPC_PROTO_PATH } from '@wellllai/contracts';
 import { Pool } from 'pg';
 import { createPostgresPool } from '@wellllai/platform';
 import { LearningApplicationService } from './application/learning.service';
@@ -11,7 +13,7 @@ import {
   LearningRepository,
   POSTGRES_POOL,
 } from './application/ports';
-import { KnowledgeHttpClient } from './infrastructure/knowledge-http.client';
+import { KNOWLEDGE_GRPC_CLIENT, KnowledgeGrpcClient } from './infrastructure/knowledge-grpc.client';
 import { OpenAiLearningAdapter } from './infrastructure/openai-learning.adapter';
 import { OutboxRelayService } from './infrastructure/outbox-relay.service';
 import { PgLearningRepository } from './infrastructure/pg-learning.repository';
@@ -20,6 +22,20 @@ import { KnowledgeEventsController } from './presentation/knowledge-events.contr
 import { LearningController } from './presentation/learning.controller';
 
 @Module({
+  imports: [
+    ClientsModule.register([
+      {
+        name: KNOWLEDGE_GRPC_CLIENT,
+        transport: Transport.GRPC,
+        options: {
+          package: KNOWLEDGE_GRPC_PACKAGE,
+          protoPath: KNOWLEDGE_GRPC_PROTO_PATH,
+          url: process.env.KNOWLEDGE_GRPC_URL ?? 'localhost:4011',
+          loader: { keepCase: false, defaults: false },
+        },
+      },
+    ]),
+  ],
   controllers: [LearningController, KnowledgeEventsController],
   providers: [
     OutboxRelayService,
@@ -37,7 +53,7 @@ import { LearningController } from './presentation/learning.controller';
       inject: [POSTGRES_POOL],
       useFactory: (pool: Pool) => new PgLearningRepository(pool),
     },
-    { provide: KNOWLEDGE_RETRIEVAL, useClass: KnowledgeHttpClient },
+    { provide: KNOWLEDGE_RETRIEVAL, useClass: KnowledgeGrpcClient },
     {
       provide: LEARNING_AI,
       useFactory: () => {

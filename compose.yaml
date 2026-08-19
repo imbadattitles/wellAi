@@ -1,0 +1,404 @@
+name: wellllai-dev
+
+x-node-image: &node-image
+  image: wellllai-dev:local
+  build:
+    context: .
+    dockerfile: Dockerfile.dev
+
+x-node-service: &node-service
+  <<: *node-image
+  init: true
+  restart: unless-stopped
+
+x-app-environment: &app-environment
+  NODE_ENV: development
+  DATABASE_URL: postgresql://wellllai:wellllai@postgres:5432/wellllai
+  KAFKA_BROKERS: kafka:19092
+  REDIS_URL: redis://redis:6379
+  OPENAI_API_KEY: '${OPENAI_API_KEY:-replace-me}'
+  OPENAI_BASE_URL: '${OPENAI_BASE_URL:-https://api.openai.com/v1}'
+  OPENAI_TEXT_MODEL: '${OPENAI_TEXT_MODEL:-gpt-5.6-terra}'
+  OPENAI_EMBEDDING_MODEL: '${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}'
+  OPENAI_TIMEOUT_MS: '${OPENAI_TIMEOUT_MS:-60000}'
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.6-pg16-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: wellllai
+      POSTGRES_PASSWORD: wellllai
+      POSTGRES_DB: wellllai
+    ports:
+      - '127.0.0.1:${POSTGRES_HOST_PORT:-15432}:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    shm_size: 256mb
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U wellllai -d wellllai']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  redis:
+    image: redis:8.2.8-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--save', '', '--appendonly', 'no']
+    ports:
+      - '127.0.0.1:${REDIS_HOST_PORT:-16379}:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  kafka-volume-init:
+    image: apache/kafka:4.3.1
+    user: '0:0'
+    restart: 'no'
+    entrypoint: ['/bin/sh', '-c']
+    command: ['chown -R 1000:1000 /tmp/kraft-combined-logs']
+    volumes:
+      - kafka_data:/tmp/kraft-combined-logs
+
+  kafka:
+    image: apache/kafka:4.3.1
+    hostname: kafka
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,HOST:PLAINTEXT
+      KAFKA_LISTENERS: INTERNAL://:19092,CONTROLLER://:9093,HOST://:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:19092,HOST://localhost:${KAFKA_HOST_PORT:-29092}
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR: 1
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'false'
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
+    ports:
+      - '127.0.0.1:${KAFKA_HOST_PORT:-29092}:9092'
+    volumes:
+      - kafka_data:/tmp/kraft-combined-logs
+    depends_on:
+      kafka-volume-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          '/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:19092 --list >/dev/null 2>&1',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  kafka-init:
+    image: apache/kafka:4.3.1
+    restart: 'no'
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - |
+        for topic in \
+          knowledge.commands.v1 knowledge.events.v1 \
+          learning.commands.v1 learning.events.v1 \
+          interview.commands.v1 interview.events.v1; do
+          /opt/kafka/bin/kafka-topics.sh \
+            --bootstrap-server kafka:19092 \
+            --create --if-not-exists \
+            --topic "$$topic" --partitions 3 --replication-factor 1
+        done
+
+  db-migrate:
+    <<: *node-image
+    init: true
+    restart: 'no'
+    command: ['node', 'docker/migrate.mjs']
+    environment:
+      DATABASE_URL: postgresql://wellllai:wellllai@postgres:5432/wellllai
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  knowledge-service:
+    <<: *node-service
+    command: ['npm', 'run', 'dev', '-w', '@wellllai/knowledge-service']
+    environment:
+      <<: *app-environment
+      KNOWLEDGE_SERVICE_PORT: 3011
+      KNOWLEDGE_GRPC_BIND_URL: 0.0.0.0:4011
+      KNOWLEDGE_KAFKA_CLIENT_ID: knowledge-service
+      KNOWLEDGE_KAFKA_GROUP_ID: knowledge-service-v1
+      KNOWLEDGE_OUTBOX_POLL_MS: 500
+      KNOWLEDGE_MAX_DOCUMENT_BYTES: 15728640
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3011/',{signal:AbortSignal.timeout(2000)}).then(()=>process.exit(0),()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+    develop:
+      watch:
+        - action: sync
+          path: ./apps/knowledge-service/src
+          target: /workspace/apps/knowledge-service/src
+        - action: sync
+          path: ./packages/contracts/src
+          target: /workspace/packages/contracts/src
+        - action: sync
+          path: ./packages/contracts/proto
+          target: /workspace/packages/contracts/proto
+        - action: sync
+          path: ./packages/platform/src
+          target: /workspace/packages/platform/src
+        - action: rebuild
+          path: ./package-lock.json
+        - action: rebuild
+          path: ./package.json
+        - action: rebuild
+          path: ./apps/knowledge-service/package.json
+        - action: rebuild
+          path: ./packages/contracts/package.json
+        - action: rebuild
+          path: ./packages/platform/package.json
+
+  learning-service:
+    <<: *node-service
+    command: ['npm', 'run', 'dev', '-w', '@wellllai/learning-service']
+    environment:
+      <<: *app-environment
+      LEARNING_SERVICE_PORT: 3012
+      KNOWLEDGE_GRPC_URL: knowledge-service:4011
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+      knowledge-service:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3012/',{signal:AbortSignal.timeout(2000)}).then(()=>process.exit(0),()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+    develop:
+      watch:
+        - action: sync
+          path: ./apps/learning-service/src
+          target: /workspace/apps/learning-service/src
+        - action: sync
+          path: ./packages/contracts/src
+          target: /workspace/packages/contracts/src
+        - action: sync
+          path: ./packages/contracts/proto
+          target: /workspace/packages/contracts/proto
+        - action: sync
+          path: ./packages/platform/src
+          target: /workspace/packages/platform/src
+        - action: rebuild
+          path: ./package-lock.json
+        - action: rebuild
+          path: ./package.json
+        - action: rebuild
+          path: ./apps/learning-service/package.json
+        - action: rebuild
+          path: ./packages/contracts/package.json
+        - action: rebuild
+          path: ./packages/platform/package.json
+
+  interview-service:
+    <<: *node-service
+    command: ['npm', 'run', 'dev', '-w', '@wellllai/interview-service']
+    environment:
+      <<: *app-environment
+      INTERVIEW_SERVICE_PORT: 3013
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3013/',{signal:AbortSignal.timeout(2000)}).then(()=>process.exit(0),()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+    develop:
+      watch:
+        - action: sync
+          path: ./apps/interview-service/src
+          target: /workspace/apps/interview-service/src
+        - action: sync
+          path: ./packages/contracts/src
+          target: /workspace/packages/contracts/src
+        - action: sync
+          path: ./packages/contracts/proto
+          target: /workspace/packages/contracts/proto
+        - action: sync
+          path: ./packages/platform/src
+          target: /workspace/packages/platform/src
+        - action: rebuild
+          path: ./package-lock.json
+        - action: rebuild
+          path: ./package.json
+        - action: rebuild
+          path: ./apps/interview-service/package.json
+        - action: rebuild
+          path: ./packages/contracts/package.json
+        - action: rebuild
+          path: ./packages/platform/package.json
+
+  api-gateway:
+    <<: *node-service
+    command: ['npm', 'run', 'dev', '-w', '@wellllai/api-gateway']
+    environment:
+      <<: *app-environment
+      API_GATEWAY_PORT: 3001
+      API_GATEWAY_KAFKA_GROUP_ID: api-gateway-status-v1
+      WEB_ORIGIN: http://localhost:3000
+      KNOWLEDGE_SERVICE_URL: http://knowledge-service:3011
+      LEARNING_SERVICE_URL: http://learning-service:3012
+      INTERVIEW_SERVICE_URL: http://interview-service:3013
+    ports:
+      - '127.0.0.1:3001:3001'
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      knowledge-service:
+        condition: service_healthy
+      learning-service:
+        condition: service_healthy
+      interview-service:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3001/api/health',{signal:AbortSignal.timeout(2000)}).then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+    develop:
+      watch:
+        - action: sync
+          path: ./apps/api-gateway/src
+          target: /workspace/apps/api-gateway/src
+        - action: sync
+          path: ./packages/contracts/src
+          target: /workspace/packages/contracts/src
+        - action: sync
+          path: ./packages/contracts/proto
+          target: /workspace/packages/contracts/proto
+        - action: sync
+          path: ./packages/platform/src
+          target: /workspace/packages/platform/src
+        - action: rebuild
+          path: ./package-lock.json
+        - action: rebuild
+          path: ./package.json
+        - action: rebuild
+          path: ./apps/api-gateway/package.json
+        - action: rebuild
+          path: ./packages/contracts/package.json
+        - action: rebuild
+          path: ./packages/platform/package.json
+
+  web:
+    <<: *node-service
+    command:
+      ['npm', 'run', 'dev', '-w', '@wellllai/web', '--', '--webpack', '--hostname', '0.0.0.0']
+    environment:
+      NODE_ENV: development
+      NEXT_PUBLIC_API_URL: http://localhost:3001/api/v1
+      WATCHPACK_POLLING: 'true'
+      CHOKIDAR_USEPOLLING: 'true'
+    ports:
+      - '127.0.0.1:3000:3000'
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/',{signal:AbortSignal.timeout(5000)}).then(r=>process.exit(r.status<500?0:1),()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 7s
+      retries: 30
+      start_period: 30s
+    develop:
+      watch:
+        - action: sync
+          path: ./apps/web/app
+          target: /workspace/apps/web/app
+        - action: sync
+          path: ./apps/web/components
+          target: /workspace/apps/web/components
+        - action: sync
+          path: ./apps/web/lib
+          target: /workspace/apps/web/lib
+        - action: sync+restart
+          path: ./apps/web/next.config.mjs
+          target: /workspace/apps/web/next.config.mjs
+        - action: sync+restart
+          path: ./apps/web/tsconfig.json
+          target: /workspace/apps/web/tsconfig.json
+        - action: rebuild
+          path: ./package-lock.json
+        - action: rebuild
+          path: ./package.json
+        - action: rebuild
+          path: ./apps/web/package.json
+
+volumes:
+  postgres_data:
+  kafka_data:

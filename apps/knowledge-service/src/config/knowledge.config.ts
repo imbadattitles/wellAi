@@ -4,6 +4,7 @@ const environmentSchema = z.object({
   DATABASE_URL: z.string().min(1),
   KAFKA_BROKERS: z.string().min(1),
   KNOWLEDGE_SERVICE_PORT: z.coerce.number().int().min(1).max(65_535).default(3011),
+  KNOWLEDGE_GRPC_BIND_URL: z.string().min(3).default('0.0.0.0:4011'),
   KNOWLEDGE_KAFKA_CLIENT_ID: z.string().min(1).default('knowledge-service'),
   KNOWLEDGE_KAFKA_GROUP_ID: z.string().min(1).default('knowledge-service-v1'),
   KNOWLEDGE_OUTBOX_POLL_MS: z.coerce.number().int().min(100).default(500),
@@ -24,6 +25,7 @@ export interface KnowledgeConfig {
   databaseUrl: string;
   kafkaBrokers: string[];
   port: number;
+  grpcBindUrl: string;
   kafkaClientId: string;
   kafkaGroupId: string;
   outboxPollMs: number;
@@ -51,6 +53,7 @@ export function readKnowledgeConfig(environment: NodeJS.ProcessEnv = process.env
     databaseUrl: parsed.DATABASE_URL,
     kafkaBrokers,
     port: parsed.KNOWLEDGE_SERVICE_PORT,
+    grpcBindUrl: parsed.KNOWLEDGE_GRPC_BIND_URL,
     kafkaClientId: parsed.KNOWLEDGE_KAFKA_CLIENT_ID,
     kafkaGroupId: parsed.KNOWLEDGE_KAFKA_GROUP_ID,
     outboxPollMs: parsed.KNOWLEDGE_OUTBOX_POLL_MS,

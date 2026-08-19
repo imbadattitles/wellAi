@@ -1,0 +1,24 @@
+FROM node:22-bookworm-slim
+
+ENV NODE_ENV=development
+WORKDIR /workspace
+
+RUN npm install --global npm@11.6.2
+
+# Keep dependency installation cached until a manifest or lockfile changes.
+COPY --chown=node:node package.json package-lock.json ./
+COPY --chown=node:node apps/api-gateway/package.json apps/api-gateway/package.json
+COPY --chown=node:node apps/interview-service/package.json apps/interview-service/package.json
+COPY --chown=node:node apps/knowledge-service/package.json apps/knowledge-service/package.json
+COPY --chown=node:node apps/learning-service/package.json apps/learning-service/package.json
+COPY --chown=node:node apps/web/package.json apps/web/package.json
+COPY --chown=node:node packages/contracts/package.json packages/contracts/package.json
+COPY --chown=node:node packages/platform/package.json packages/platform/package.json
+
+RUN npm ci && npm cache clean --force
+
+COPY --chown=node:node . .
+
+USER node
+
+CMD ["npm", "run", "dev", "-w", "@wellllai/web", "--", "--webpack", "--hostname", "0.0.0.0"]

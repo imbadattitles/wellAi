@@ -32,3 +32,9 @@ export class LearningAiOutputError extends LearningError {
     super('LEARNING_AI_OUTPUT_INVALID', message, 502);
   }
 }
+
+export class LearningDependencyError extends LearningError {
+  constructor(code: string, message: string, statusCode: 502 | 503 | 504 = 502) {
+    super(code, message, statusCode);
+  }
+}

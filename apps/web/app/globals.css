@@ -2551,7 +2551,7 @@ textarea:disabled {
   color: var(--muted);
 }
 
-.polling-status {
+.live-status {
   display: inline-flex;
   min-height: 42px;
   align-items: center;

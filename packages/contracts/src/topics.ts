@@ -17,6 +17,7 @@ export const MessageTypes = {
   learningQuizReady: 'learning.quiz.ready',
   learningAttemptGraded: 'learning.attempt.graded',
   learningMasteryUpdated: 'learning.mastery.updated',
+  learningProgramStatusChanged: 'learning.program.status.changed',
   interviewScenarioGenerationRequested: 'interview.scenario.generation.requested',
   interviewScenarioReady: 'interview.scenario.ready',
   interviewScenarioGenerationFailed: 'interview.scenario.generation.failed',

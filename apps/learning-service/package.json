@@ -5,11 +5,14 @@
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "dev": "nodemon --legacy-watch --signal SIGTERM --delay 500ms --watch src --watch ../../packages/contracts/src --watch ../../packages/contracts/proto --watch ../../packages/platform/src --ext ts,proto --exec \"tsc -b tsconfig.json && node --enable-source-maps dist/main.js\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "start": "node dist/main.js"
   },
   "dependencies": {
+    "@grpc/grpc-js": "^1.13.0",
+    "@grpc/proto-loader": "^0.8.0",
     "@nestjs/common": "^11.1.0",
     "@nestjs/core": "^11.1.0",
     "@nestjs/microservices": "^11.1.0",

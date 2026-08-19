@@ -17,10 +17,15 @@
     "typecheck": "npm run build:packages && npm run typecheck --workspaces --if-present",
     "test": "npm run build:packages && npm run test --workspaces --if-present",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "docker:dev": "docker compose up --build --watch",
+    "docker:down": "docker compose down --remove-orphans",
+    "docker:reset": "docker compose down --remove-orphans --volumes"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "nodemon": "^3.1.14",
+    "pg": "^8.16.0",
     "prettier": "^3.6.0",
     "typescript": "^5.9.0",
     "vitest": "^3.2.0"

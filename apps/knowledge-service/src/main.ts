@@ -1,6 +1,8 @@
 import 'reflect-metadata';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { MicroserviceOptions, Transport } from '@nestjs/microservices';
+import { KNOWLEDGE_GRPC_PACKAGE, KNOWLEDGE_GRPC_PROTO_PATH } from '@wellllai/contracts';
 import { AppModule } from './app.module';
 import { KnowledgeConfig } from './config/knowledge.config';
 import { KNOWLEDGE_CONFIG } from './infrastructure/tokens';
@@ -20,6 +22,17 @@ async function bootstrap(): Promise<void> {
   app.useGlobalFilters(new ApiExceptionFilter());
   app.enableShutdownHooks();
 
+  app.connectMicroservice<MicroserviceOptions>({
+    transport: Transport.GRPC,
+    options: {
+      package: KNOWLEDGE_GRPC_PACKAGE,
+      protoPath: KNOWLEDGE_GRPC_PROTO_PATH,
+      url: config.grpcBindUrl,
+      loader: { keepCase: false, defaults: false },
+    },
+  });
+
+  await app.startAllMicroservices();
   await app.listen(config.port, '0.0.0.0');
 }
 

@@ -1,6 +1,17 @@
-import { Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  Headers,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Sse,
+} from '@nestjs/common';
 import { ServiceHttpClient } from '../application/service-http.client';
 import { ServiceUrls } from '../application/service-urls';
+import { StatusStreamService } from '../application/status-stream.service';
 import { CreateInterviewDto, SubmitInterviewAnswerDto } from './dto';
 import { resolveUserId } from './user-id';
 
@@ -9,6 +20,7 @@ export class InterviewGatewayController {
   constructor(
     private readonly http: ServiceHttpClient,
     private readonly urls: ServiceUrls,
+    private readonly statusStreams: StatusStreamService,
   ) {}
 
   @Post()
@@ -21,6 +33,15 @@ export class InterviewGatewayController {
         userId: resolveUserId(userHeader),
       }),
     });
+  }
+
+  @Sse(':sessionId/events')
+  @Header('X-Accel-Buffering', 'no')
+  events(
+    @Headers('x-user-id') userHeader: string | undefined,
+    @Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string,
+  ) {
+    return this.statusStreams.interviewSession(sessionId, resolveUserId(userHeader));
   }
 
   @Get(':sessionId')

@@ -2,12 +2,14 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Headers,
   Logger,
   Param,
   ParseFilePipe,
   ParseUUIDPipe,
   Post,
+  Sse,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
@@ -15,6 +17,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiEnvelope } from '@wellllai/contracts';
 import { ServiceHttpClient, ServiceHttpError } from '../application/service-http.client';
 import { ServiceUrls } from '../application/service-urls';
+import { StatusStreamService } from '../application/status-stream.service';
 import {
   AskQuestionDto,
   CreateDocumentProgramDto,
@@ -37,6 +40,7 @@ export class LearningGatewayController {
   constructor(
     private readonly http: ServiceHttpClient,
     private readonly urls: ServiceUrls,
+    private readonly statusStreams: StatusStreamService,
   ) {}
 
   @Post('learning-programs/from-topic')
@@ -125,6 +129,15 @@ export class LearningGatewayController {
     return this.http.json(
       `${this.urls.learning}/internal/programs/${encodeURIComponent(programId)}?userId=${userId}`,
     );
+  }
+
+  @Sse('learning-programs/:programId/events')
+  @Header('X-Accel-Buffering', 'no')
+  events(
+    @Headers('x-user-id') userHeader: string | undefined,
+    @Param('programId', new ParseUUIDPipe({ version: '4' })) programId: string,
+  ) {
+    return this.statusStreams.learningProgram(programId, resolveUserId(userHeader));
   }
 
   @Get('learning-programs/:programId/progress')

@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package wellllai.knowledge.v1;
+
+service KnowledgeRetrievalService {
+  rpc Retrieve(RetrieveKnowledgeRequest) returns (RetrieveKnowledgeResponse);
+}
+
+message RetrieveKnowledgeRequest {
+  string source_id = 1;
+  string query = 2;
+  int32 limit = 3;
+}
+
+message RetrievedKnowledgeChunk {
+  string chunk_id = 1;
+  string source_id = 2;
+  string text = 3;
+  optional int32 page = 4;
+  optional string heading = 5;
+  double similarity = 6;
+}
+
+message RetrieveKnowledgeResponse {
+  repeated RetrievedKnowledgeChunk chunks = 1;
+}

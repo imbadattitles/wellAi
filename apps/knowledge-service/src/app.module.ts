@@ -31,9 +31,10 @@ import { KNOWLEDGE_REPOSITORY, KnowledgeRepositoryPort } from './ports/knowledge
 import { TEXT_EXTRACTION, TextExtractionPort } from './ports/text-extraction.port';
 import { TOPIC_MATERIALIZER, TopicMaterializerPort } from './ports/topic-materializer.port';
 import { KnowledgeController } from './presentation/http/knowledge.controller';
+import { KnowledgeGrpcController } from './presentation/grpc/knowledge-grpc.controller';
 
 @Module({
-  controllers: [KnowledgeController],
+  controllers: [KnowledgeController, KnowledgeGrpcController],
   providers: [
     {
       provide: KNOWLEDGE_CONFIG,

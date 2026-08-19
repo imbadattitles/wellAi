@@ -24,7 +24,7 @@ describe('LearningGatewayController', () => {
       learning: 'http://learning',
       knowledge: 'http://knowledge',
     } as unknown as ServiceUrls;
-    const controller = new LearningGatewayController(http, urls);
+    const controller = new LearningGatewayController(http, urls, {} as never);
     const file = {
       originalname: 'notes.pdf',
       mimetype: 'application/pdf',

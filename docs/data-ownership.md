@@ -20,7 +20,7 @@
 - mastery по темам;
 - собственные outbox/inbox.
 
-Learning-service получает контекст только через internal API knowledge-service.
+Learning-service получает контекст только через внутренний gRPC API knowledge-service.
 
 ## `interview` schema
 

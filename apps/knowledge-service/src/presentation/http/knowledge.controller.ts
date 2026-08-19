@@ -10,10 +10,8 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiEnvelope, apiSuccess, RetrievedChunk } from '@wellllai/contracts';
-import { RetrieveKnowledgeUseCase } from '../../application/retrieve-knowledge.use-case';
+import { ApiEnvelope, apiSuccess } from '@wellllai/contracts';
 import { UploadDocumentUseCase } from '../../application/upload-document.use-case';
-import { RetrieveKnowledgeDto } from './dto/retrieve-knowledge.dto';
 import { UploadDocumentDto } from './dto/upload-document.dto';
 
 interface UploadDocumentResponse {
@@ -23,10 +21,7 @@ interface UploadDocumentResponse {
 
 @Controller()
 export class KnowledgeController {
-  constructor(
-    private readonly uploadDocument: UploadDocumentUseCase,
-    private readonly retrieveKnowledge: RetrieveKnowledgeUseCase,
-  ) {}
+  constructor(private readonly uploadDocument: UploadDocumentUseCase) {}
 
   @Post('/internal/documents')
   @HttpCode(HttpStatus.ACCEPTED)
@@ -57,11 +52,5 @@ export class KnowledgeController {
     });
 
     return apiSuccess({ sourceId: source.id, status: source.status });
-  }
-
-  @Post('/internal/retrievals')
-  async retrieve(@Body() dto: RetrieveKnowledgeDto): Promise<{ chunks: RetrievedChunk[] }> {
-    const chunks = await this.retrieveKnowledge.execute(dto);
-    return { chunks };
   }
 }

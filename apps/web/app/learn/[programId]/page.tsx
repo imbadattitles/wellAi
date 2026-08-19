@@ -27,6 +27,7 @@ import {
   type Quiz,
   type QuizQuestion,
 } from '../../../lib/api-client';
+import { subscribeToLearningProgramStates } from '../../../lib/status-stream';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -142,7 +143,7 @@ export default function LearningProgramPage() {
   const [program, setProgram] = useState<LearningProgram | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
-  const [pollError, setPollError] = useState<string | null>(null);
+  const [streamError, setStreamError] = useState<string | null>(null);
   const [question, setQuestion] = useState('');
   const [citedAnswer, setCitedAnswer] = useState<CitedAnswer | null>(null);
   const [questionError, setQuestionError] = useState<string | null>(null);
@@ -169,10 +170,10 @@ export default function LearningProgramPage() {
         const nextProgram = await getLearningProgram(programId);
         setProgram(nextProgram);
         setPageError(null);
-        setPollError(null);
+        setStreamError(null);
       } catch (error) {
         const message = getErrorMessage(error);
-        if (silent) setPollError(message);
+        if (silent) setStreamError(message);
         else setPageError(message);
       } finally {
         if (!silent) setIsLoading(false);
@@ -199,8 +200,43 @@ export default function LearningProgramPage() {
 
   useEffect(() => {
     if (!isProcessing) return;
-    const timer = window.setInterval(() => void loadProgram(true), 2500);
-    return () => window.clearInterval(timer);
+    let fallbackTimer: number | null = null;
+    const stopFallback = () => {
+      if (fallbackTimer !== null) window.clearInterval(fallbackTimer);
+      fallbackTimer = null;
+    };
+    const startFallback = () => {
+      if (fallbackTimer === null) {
+        void loadProgram(true);
+        fallbackTimer = window.setInterval(() => void loadProgram(true), 7_500);
+      }
+    };
+
+    const unsubscribe = subscribeToLearningProgramStates<LearningProgram>(programId, {
+      onOpen: () => {
+        stopFallback();
+        setStreamError(null);
+      },
+      onState: (nextProgram) => {
+        setProgram(nextProgram);
+        setStreamError(null);
+        return nextProgram.status === 'pending' || nextProgram.status === 'processing';
+      },
+      onError: (error) => {
+        setStreamError(`${getErrorMessage(error)} Повторяем подключение…`);
+        startFallback();
+      },
+    });
+    const reconcileWhenVisible = () => {
+      if (document.visibilityState === 'visible') void loadProgram(true);
+    };
+    document.addEventListener('visibilitychange', reconcileWhenVisible);
+
+    return () => {
+      document.removeEventListener('visibilitychange', reconcileWhenVisible);
+      unsubscribe();
+      stopFallback();
+    };
   }, [isProcessing, loadProgram]);
 
   useEffect(() => {
@@ -309,11 +345,11 @@ export default function LearningProgramPage() {
             Сервер обрабатывает материал и готовит структуру программы. Страница обновится
             автоматически, когда программа будет готова.
           </p>
-          <div className="polling-status">
+          <div className="live-status">
             <span className="spinner spinner-dark" aria-hidden="true" />
             Статус: {program.status === 'pending' ? 'в очереди' : 'обработка'}
           </div>
-          {pollError ? <p className="inline-error">{pollError}</p> : null}
+          {streamError ? <p className="inline-error">{streamError}</p> : null}
         </section>
       </main>
     );

@@ -47,9 +47,10 @@ interview.report.generation.requested
 
 ## Основные события
 
-Knowledge- и interview-события входят в текущий поток. Learning-события зарезервированы для
-будущей асинхронной аналитики; попытки и mastery в MVP записываются транзакционно самим
-learning-service.
+Knowledge- и interview-события входят в текущий поток. Learning-service также публикует
+`learning.program.status.changed` после фиксации терминального статуса программы; gateway
+использует это событие для SSE. Остальные learning-события зарезервированы для будущей
+асинхронной аналитики; попытки и mastery в MVP записываются транзакционно самим learning-service.
 
 ```text
 knowledge.source.ready
@@ -57,6 +58,7 @@ knowledge.source.failed
 learning.quiz.ready
 learning.attempt.graded
 learning.mastery.updated
+learning.program.status.changed
 interview.scenario.ready
 interview.scenario.generation.failed
 interview.session.completed

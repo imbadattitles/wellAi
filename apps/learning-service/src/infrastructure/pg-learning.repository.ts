@@ -258,30 +258,64 @@ export class PgLearningRepository implements LearningRepository {
   }
 
   async markSourceReady(
-    messageId: string,
+    context: Parameters<LearningRepository['markSourceReady']>[0],
     payload: { sourceId: string; programId: string; knowledgeVersionId: string },
   ): Promise<void> {
-    await consumeOnce(this.pool, 'learning', messageId, async (client) => {
-      await client.query(
+    await consumeOnce(this.pool, 'learning', context.messageId, async (client) => {
+      const result = await client.query(
         `UPDATE learning.programs
             SET status = 'ready', knowledge_version_id = $3, failure_code = NULL, updated_at = NOW()
           WHERE id = $1 AND source_id = $2`,
         [payload.programId, payload.sourceId, payload.knowledgeVersionId],
       );
+      if (result.rowCount !== 1) return;
+
+      const event = createEnvelope({
+        messageType: MessageTypes.learningProgramStatusChanged,
+        producer: 'learning-service',
+        aggregateId: payload.programId,
+        correlationId: context.correlationId,
+        causationId: context.messageId,
+        traceparent: context.traceparent,
+        payload: {
+          programId: payload.programId,
+          sourceId: payload.sourceId,
+          status: 'ready' as const,
+          failureCode: null,
+        },
+      });
+      await addToOutbox(client, 'learning', KafkaTopics.learningEvents, payload.programId, event);
     });
   }
 
   async markSourceFailed(
-    messageId: string,
+    context: Parameters<LearningRepository['markSourceFailed']>[0],
     payload: { sourceId: string; programId: string; errorCode: string },
   ): Promise<void> {
-    await consumeOnce(this.pool, 'learning', messageId, async (client) => {
-      await client.query(
+    await consumeOnce(this.pool, 'learning', context.messageId, async (client) => {
+      const result = await client.query(
         `UPDATE learning.programs
             SET status = 'failed', failure_code = $3, updated_at = NOW()
           WHERE id = $1 AND source_id = $2`,
         [payload.programId, payload.sourceId, payload.errorCode],
       );
+      if (result.rowCount !== 1) return;
+
+      const event = createEnvelope({
+        messageType: MessageTypes.learningProgramStatusChanged,
+        producer: 'learning-service',
+        aggregateId: payload.programId,
+        correlationId: context.correlationId,
+        causationId: context.messageId,
+        traceparent: context.traceparent,
+        payload: {
+          programId: payload.programId,
+          sourceId: payload.sourceId,
+          status: 'failed' as const,
+          failureCode: payload.errorCode,
+        },
+      });
+      await addToOutbox(client, 'learning', KafkaTopics.learningEvents, payload.programId, event);
     });
   }
 

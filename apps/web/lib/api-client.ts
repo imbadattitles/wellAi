@@ -209,7 +209,7 @@ export function getAnonymousUserId(): string {
   }
 }
 
-function buildUrl(path: string): string {
+export function buildApiUrl(path: string): string {
   const baseUrl = process.env.NEXT_PUBLIC_API_URL || DEFAULT_API_URL;
   return `${baseUrl.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
 }
@@ -227,7 +227,7 @@ async function request<T>(path: string, init: RequestInit, userId: string): Prom
   headers.set('x-user-id', userId);
 
   try {
-    response = await fetch(buildUrl(path), {
+    response = await fetch(buildApiUrl(path), {
       ...init,
       cache: 'no-store',
       headers,

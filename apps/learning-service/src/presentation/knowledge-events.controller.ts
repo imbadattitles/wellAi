@@ -22,11 +22,25 @@ export class KnowledgeEventsController {
     if (messageType === MessageTypes.knowledgeSourceReady) {
       const envelope = parseEnvelope(raw, knowledgeSourceReadySchema);
       this.assertAggregate(envelope.aggregateId, envelope.payload.sourceId);
-      await this.repository.markSourceReady(envelope.messageId, envelope.payload);
+      await this.repository.markSourceReady(
+        {
+          messageId: envelope.messageId,
+          correlationId: envelope.correlationId,
+          traceparent: envelope.traceparent,
+        },
+        envelope.payload,
+      );
     } else if (messageType === MessageTypes.knowledgeSourceFailed) {
       const envelope = parseEnvelope(raw, knowledgeSourceFailedSchema);
       this.assertAggregate(envelope.aggregateId, envelope.payload.sourceId);
-      await this.repository.markSourceFailed(envelope.messageId, envelope.payload);
+      await this.repository.markSourceFailed(
+        {
+          messageId: envelope.messageId,
+          correlationId: envelope.correlationId,
+          traceparent: envelope.traceparent,
+        },
+        envelope.payload,
+      );
     }
 
     await context.getHeartbeat()();

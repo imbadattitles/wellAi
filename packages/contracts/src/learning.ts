@@ -24,6 +24,15 @@ export const createDocumentProgramSchema = z.object({
 
 export type CreateDocumentProgram = z.infer<typeof createDocumentProgramSchema>;
 
+export const learningProgramStatusChangedSchema = z.object({
+  programId: z.string().uuid(),
+  sourceId: z.string().uuid(),
+  status: z.enum(['ready', 'failed']),
+  failureCode: z.string().trim().min(1).max(100).nullable(),
+});
+
+export type LearningProgramStatusChanged = z.infer<typeof learningProgramStatusChangedSchema>;
+
 export const answerQuestionSchema = z.object({
   userId: z.string().uuid(),
   programId: z.string().uuid(),

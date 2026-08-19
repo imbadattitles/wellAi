@@ -89,7 +89,11 @@ export interface LearningRepository {
     evaluation: AnswerEvaluation;
   }): Promise<{ attemptId: string; mastery: number }>;
   markSourceReady(
-    messageId: string,
+    context: {
+      messageId: string;
+      correlationId: string;
+      traceparent: string | null;
+    },
     payload: {
       sourceId: string;
       programId: string;
@@ -97,7 +101,11 @@ export interface LearningRepository {
     },
   ): Promise<void>;
   markSourceFailed(
-    messageId: string,
+    context: {
+      messageId: string;
+      correlationId: string;
+      traceparent: string | null;
+    },
     payload: {
       sourceId: string;
       programId: string;

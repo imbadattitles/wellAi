@@ -20,6 +20,7 @@ import {
   type InterviewAnswerResult,
   type InterviewSession,
 } from '../../../lib/api-client';
+import { subscribeToInterviewStates } from '../../../lib/status-stream';
 
 interface PendingSubmission {
   answerId: string;
@@ -92,7 +93,7 @@ export default function InterviewSessionPage() {
   const [session, setSession] = useState<InterviewSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
-  const [pollError, setPollError] = useState<string | null>(null);
+  const [streamError, setStreamError] = useState<string | null>(null);
   const [answer, setAnswer] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [answerError, setAnswerError] = useState<string | null>(null);
@@ -112,10 +113,10 @@ export default function InterviewSessionPage() {
         const nextSession = await getInterview(sessionId);
         setSession(nextSession);
         setPageError(null);
-        setPollError(null);
+        setStreamError(null);
       } catch (error) {
         const message = getErrorMessage(error);
-        if (silent) setPollError(message);
+        if (silent) setStreamError(message);
         else setPageError(message);
       } finally {
         if (!silent) setIsLoading(false);
@@ -136,8 +137,48 @@ export default function InterviewSessionPage() {
 
   useEffect(() => {
     if (!shouldPoll) return;
-    const timer = window.setInterval(() => void loadSession(true), 2500);
-    return () => window.clearInterval(timer);
+    let fallbackTimer: number | null = null;
+    const stopFallback = () => {
+      if (fallbackTimer !== null) window.clearInterval(fallbackTimer);
+      fallbackTimer = null;
+    };
+    const startFallback = () => {
+      if (fallbackTimer === null) {
+        void loadSession(true);
+        fallbackTimer = window.setInterval(() => void loadSession(true), 7_500);
+      }
+    };
+
+    const unsubscribe = subscribeToInterviewStates<InterviewSession>(sessionId, {
+      onOpen: () => {
+        stopFallback();
+        setStreamError(null);
+      },
+      onState: (nextSession) => {
+        setSession(nextSession);
+        setStreamError(null);
+        return (
+          nextSession.status === 'scenario_pending' ||
+          (nextSession.status === 'completed' &&
+            nextSession.reportStatus !== 'ready' &&
+            nextSession.reportStatus !== 'failed')
+        );
+      },
+      onError: (error) => {
+        setStreamError(`${getErrorMessage(error)} Повторяем подключение…`);
+        startFallback();
+      },
+    });
+    const reconcileWhenVisible = () => {
+      if (document.visibilityState === 'visible') void loadSession(true);
+    };
+    document.addEventListener('visibilitychange', reconcileWhenVisible);
+
+    return () => {
+      document.removeEventListener('visibilitychange', reconcileWhenVisible);
+      unsubscribe();
+      stopFallback();
+    };
   }, [loadSession, shouldPoll]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -228,14 +269,14 @@ export default function InterviewSessionPage() {
           </p>
           <h1>Готовим сценарий интервью</h1>
           <p>
-            Сессия ещё не началась. Страница проверяет статус и покажет первый вопрос, когда
-            сценарий будет готов.
+            Сессия ещё не началась. Сервер сообщит странице и покажет первый вопрос, когда сценарий
+            будет готов.
           </p>
-          <div className="polling-status">
+          <div className="live-status">
             <span className="spinner spinner-dark" aria-hidden="true" />
             Ожидаем сценарий
           </div>
-          {pollError ? <p className="inline-error">{pollError}</p> : null}
+          {streamError ? <p className="inline-error">{streamError}</p> : null}
         </section>
       </main>
     );
@@ -400,7 +441,7 @@ export default function InterviewSessionPage() {
             <div>
               <h2>Формируем итоговый отчёт</h2>
               <p>Страница обновится автоматически после ответа сервера.</p>
-              {pollError ? <span className="inline-error">{pollError}</span> : null}
+              {streamError ? <span className="inline-error">{streamError}</span> : null}
             </div>
           </section>
         )}
@@ -460,7 +501,7 @@ export default function InterviewSessionPage() {
             </h2>
 
             {answerError ? <ErrorNotice message={answerError} /> : null}
-            {pollError ? <p className="inline-error">{pollError}</p> : null}
+            {streamError ? <p className="inline-error">{streamError}</p> : null}
 
             <form className="interview-answer-form" onSubmit={handleSubmit}>
               <label htmlFor="interview-answer">Ваш ответ</label>
